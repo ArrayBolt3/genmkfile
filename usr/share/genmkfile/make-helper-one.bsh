@@ -106,19 +106,63 @@ If '${cmd}' is listed in debian/control, try:
   done
 }
 
+## Fill empty DEBEMAIL / DEBFULLNAME from the debian/control 'Maintainer:' field
+## (RFC822 'Full Name <email>'), then export them for the child tools (debchange,
+## sq). Fills only the empty variable, so an explicitly-set one is preserved. No-op
+## when debian/control is absent (special git-describe repos) -- the caller's guard
+## then fails loud.
+deb_maintainer_identity_from_control() {
+  local maintainer_raw derived_name derived_email
+
+  if [ -z "${make_debian_control_file_absolute_path:-}" ] \
+    || [ ! -r "${make_debian_control_file_absolute_path}" ]; then
+    return 0
+  fi
+
+  make_require grep-dctrl
+
+  maintainer_raw="$(grep-dctrl --show-field=Maintainer --no-field-names '' "${make_debian_control_file_absolute_path}")"
+
+  case "${maintainer_raw}" in
+    *'<'*'>'*)
+      ;;
+    *)
+      exit_with_error 1 "could not parse a 'Full Name <email>' Maintainer from '${make_debian_control_file_absolute_path}'. Set DEBEMAIL and DEBFULLNAME explicitly."
+      ;;
+  esac
+
+  derived_email="${maintainer_raw#*<}"
+  derived_email="${derived_email%%>*}"
+  derived_name="${maintainer_raw%%<*}"
+  ## Strip trailing whitespace left before the '<'.
+  derived_name="${derived_name%"${derived_name##*[![:space:]]}"}"
+
+  [ -n "${DEBEMAIL:-}" ] || DEBEMAIL="${derived_email}"
+  [ -n "${DEBFULLNAME:-}" ] || DEBFULLNAME="${derived_name}"
+  export DEBEMAIL DEBFULLNAME
+}
+
 ## Validate DEBEMAIL / DEBFULLNAME. The matching tools (debsign,
 ## debchange, sq, sq-git, git, bc, ...) are 'make_require'd at each
 ## individual call site rather than lumped together here, so failing a
 ## target only blocks on the tools that target actually needs.
 deb_variables_check() {
+  ## Derive the maintainer identity from debian/control when unset, so the
+  ## debian/changelog trailer always equals the control Maintainer and lintian's
+  ## source-nmu-has-incorrect-version-number (trailer-email != Maintainer-email) is
+  ## impossible with zero configuration.
+  if [ -z "${DEBEMAIL:-}" ] || [ -z "${DEBFULLNAME:-}" ]; then
+    deb_maintainer_identity_from_control
+  fi
+
+  ## A non-empty identity is mandatory: otherwise the e-mail address in
+  ## debian/changelog would default to user@host.localdomain and then lintian would
+  ## complain and exit with failure code.
   if [ -z "${DEBEMAIL:-}" ]; then
-    ## Otherwise e-mail address in debian/changelog would default to
-    ## user@host.localdomain and then lintian would complain and exit with
-    ## failure code.
-    exit_with_error 1 "environment variable DEBEMAIL may not be empty! Both, DEBEMAIL and DEBFULLNAME need to be set!"
+    exit_with_error 1 "DEBEMAIL is empty and could not be derived from debian/control. Set DEBEMAIL and DEBFULLNAME, or add a 'Maintainer:' field to debian/control."
   fi
   if [ -z "${DEBFULLNAME:-}" ]; then
-    exit_with_error 1 "environment variable DEBFULLNAME may not be empty! Both, DEBEMAIL and DEBFULLNAME need to be set!"
+    exit_with_error 1 "DEBFULLNAME is empty and could not be derived from debian/control. Set DEBEMAIL and DEBFULLNAME, or add a 'Maintainer:' field to debian/control."
   fi
 
   ## TODO: DEBSIGN_KEYID ?
