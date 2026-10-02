@@ -121,9 +121,11 @@ deb_maintainer_identity_from_control() {
 
   make_require grep-dctrl
 
-  ## A non-zero grep-dctrl is a real debian/control parse error (it can still print a
-  ## partial value from an earlier valid stanza) -- fail loud, do not derive from it.
-  if ! maintainer_raw="$(grep-dctrl --show-field=Maintainer --no-field-names '' "${make_debian_control_file_absolute_path}")"; then
+  ## Scope to the SOURCE stanza's Maintainer only (-F Source): an empty pattern would
+  ## match every paragraph, and a Maintainer in a binary stanza too, yielding multi-line
+  ## output that would corrupt the derived identity. A non-zero grep-dctrl is a real
+  ## parse error (it can still print a partial value) -- fail loud, do not derive.
+  if ! maintainer_raw="$(grep-dctrl -F Source --show-field=Maintainer --no-field-names '' "${make_debian_control_file_absolute_path}")"; then
     exit_with_error 1 "failed to parse the Maintainer field from '${make_debian_control_file_absolute_path}'. Set DEBEMAIL and DEBFULLNAME explicitly."
   fi
 
@@ -145,6 +147,16 @@ deb_maintainer_identity_from_control() {
   derived_email="${derived_email%"${derived_email##*[![:space:]]}"}"
   derived_name="${derived_name#"${derived_name%%[![:space:]]*}"}"
   derived_name="${derived_name%"${derived_name##*[![:space:]]}"}"
+
+  ## The derived address must be a real addr-spec: the LAST '<' may be unclosed, which
+  ## would leave trailing garbage (no '@') that must not reach debchange or sq.
+  case "${derived_email}" in
+    *@*)
+      ;;
+    *)
+      exit_with_error 1 "derived maintainer e-mail '${derived_email}' from '${make_debian_control_file_absolute_path}' is not an address. Set DEBEMAIL and DEBFULLNAME explicitly."
+      ;;
+  esac
 
   [ -n "${DEBEMAIL:-}" ] || DEBEMAIL="${derived_email}"
   [ -n "${DEBFULLNAME:-}" ] || DEBFULLNAME="${derived_name}"
