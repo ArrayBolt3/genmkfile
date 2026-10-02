@@ -114,6 +114,7 @@ If '${cmd}' is listed in debian/control, try:
 ## fails loud.
 deb_maintainer_identity_from_control() {
   local maintainer_raw derived_name derived_email
+  local newline=$'\n'
 
   if [ -z "${make_debian_control_file_absolute_path:-}" ] \
     || [ ! -r "${make_debian_control_file_absolute_path}" ]; then
@@ -129,6 +130,15 @@ deb_maintainer_identity_from_control() {
   if ! maintainer_raw="$(grep-dctrl -F Source --show-field=Maintainer --no-field-names '' "${make_debian_control_file_absolute_path}")"; then
     exit_with_error 1 "failed to parse the Maintainer field from '${make_debian_control_file_absolute_path}'. Set DEBEMAIL and DEBFULLNAME explicitly."
   fi
+
+  ## grep-dctrl preserves RFC822 folding verbatim, so a folded (continuation-line)
+  ## Maintainer carries an embedded newline that would split the changelog trailer across
+  ## lines -- reject a multi-line value rather than corrupt debian/changelog.
+  case "${maintainer_raw}" in
+    *"${newline}"*)
+      exit_with_error 1 "the Maintainer field in '${make_debian_control_file_absolute_path}' spans multiple lines. Set DEBEMAIL and DEBFULLNAME explicitly."
+      ;;
+  esac
 
   ## A Debian Maintainer is a single RFC822 mailbox 'Full Name <email>'. Require EXACTLY
   ## one '<...>' pair and reject anything else -- no address, more than one address
@@ -155,12 +165,19 @@ deb_maintainer_identity_from_control() {
   derived_name="${derived_name#"${derived_name%%[![:space:]]*}"}"
   derived_name="${derived_name%"${derived_name##*[![:space:]]}"}"
 
-  ## The single bracketed value must still be a real addr-spec.
+  ## The single bracketed value must be a real addr-spec: exactly one '@' with a
+  ## non-empty local part and domain and no embedded whitespace. A malformed address (a
+  ## bare '@', 'a @ b', 'a@@b', ...) is rejected, not written to the changelog. Fuller
+  ## RFC822 forms (quoted display names, comments) do not occur in a Debian Maintainer
+  ## field and are deliberately rejected -- set DEBEMAIL/DEBFULLNAME explicitly instead.
   case "${derived_email}" in
-    *@*)
+    *[[:space:]]* | *@*@*)
+      exit_with_error 1 "derived maintainer e-mail '${derived_email}' from '${make_debian_control_file_absolute_path}' is not a valid address. Set DEBEMAIL and DEBFULLNAME explicitly."
+      ;;
+    ?*@?*)
       ;;
     *)
-      exit_with_error 1 "derived maintainer e-mail '${derived_email}' from '${make_debian_control_file_absolute_path}' is not an address. Set DEBEMAIL and DEBFULLNAME explicitly."
+      exit_with_error 1 "derived maintainer e-mail '${derived_email}' from '${make_debian_control_file_absolute_path}' is not a valid address. Set DEBEMAIL and DEBFULLNAME explicitly."
       ;;
   esac
 
