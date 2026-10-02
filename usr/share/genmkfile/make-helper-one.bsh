@@ -106,11 +106,12 @@ If '${cmd}' is listed in debian/control, try:
   done
 }
 
-## Fill empty DEBEMAIL / DEBFULLNAME from the debian/control 'Maintainer:' field
-## (RFC822 'Full Name <email>'), then export them for the child tools (debchange,
-## sq). Fills only the empty variable, so an explicitly-set one is preserved. No-op
-## when debian/control is absent (special git-describe repos) -- the caller's guard
-## then fails loud.
+## Derive DEBEMAIL and DEBFULLNAME together from the debian/control 'Maintainer:' field
+## (RFC822 'Full Name <email>') and export them for the child tools (debchange, sq). The
+## maintainer identity is one coherent mailbox, so the caller invokes this only when BOTH
+## are unset -- a half-set override is left to fail loud, never mixed with control. No-op
+## when debian/control is absent (special git-describe repos) -- the caller's guard then
+## fails loud.
 deb_maintainer_identity_from_control() {
   local maintainer_raw derived_name derived_email
 
@@ -163,8 +164,8 @@ deb_maintainer_identity_from_control() {
       ;;
   esac
 
-  [ -n "${DEBEMAIL:-}" ] || DEBEMAIL="${derived_email}"
-  [ -n "${DEBFULLNAME:-}" ] || DEBFULLNAME="${derived_name}"
+  DEBEMAIL="${derived_email}"
+  DEBFULLNAME="${derived_name}"
   export DEBEMAIL DEBFULLNAME
 }
 
@@ -173,11 +174,12 @@ deb_maintainer_identity_from_control() {
 ## individual call site rather than lumped together here, so failing a
 ## target only blocks on the tools that target actually needs.
 deb_variables_check() {
-  ## Derive the maintainer identity from debian/control when unset, so the
-  ## debian/changelog trailer always equals the control Maintainer and lintian's
-  ## source-nmu-has-incorrect-version-number (trailer-email != Maintainer-email) is
-  ## impossible with zero configuration.
-  if [ -z "${DEBEMAIL:-}" ] || [ -z "${DEBFULLNAME:-}" ]; then
+  ## Derive the maintainer identity from debian/control only when BOTH vars are unset, so
+  ## the debian/changelog trailer equals the control Maintainer with zero configuration.
+  ## A partially-set identity is NOT completed from control (that would pair an operator
+  ## value with a control value into an incoherent mailbox) -- it falls through to the
+  ## mandatory-non-empty guard below and fails loud.
+  if [ -z "${DEBEMAIL:-}" ] && [ -z "${DEBFULLNAME:-}" ]; then
     deb_maintainer_identity_from_control
   fi
 
