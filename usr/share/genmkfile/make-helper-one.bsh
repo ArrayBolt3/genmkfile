@@ -127,6 +127,10 @@ deb_maintainer_identity_from_control() {
   ## match every paragraph, and a Maintainer in a binary stanza too, yielding multi-line
   ## output that would corrupt the derived identity. A non-zero grep-dctrl is a real
   ## parse error (it can still print a partial value) -- fail loud, do not derive.
+  ## A doubly-malformed control (a stray 'Source:' in a non-source stanza AND the real
+  ## source stanza missing its mandatory Maintainer) is out of scope: dpkg/lintian reject
+  ## it, a comment-aware first-paragraph selector would mean reinventing a deb822 parser,
+  ## and a writer of debian/control already controls the real Maintainer directly.
   if ! maintainer_raw="$(grep-dctrl -F Source --show-field=Maintainer --no-field-names '' "${make_debian_control_file_absolute_path}")"; then
     exit_with_error 1 "failed to parse the Maintainer field from '${make_debian_control_file_absolute_path}'. Set DEBEMAIL and DEBFULLNAME explicitly."
   fi
