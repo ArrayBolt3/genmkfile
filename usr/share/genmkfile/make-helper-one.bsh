@@ -121,7 +121,11 @@ deb_maintainer_identity_from_control() {
 
   make_require grep-dctrl
 
-  maintainer_raw="$(grep-dctrl --show-field=Maintainer --no-field-names '' "${make_debian_control_file_absolute_path}")"
+  ## A non-zero grep-dctrl is a real debian/control parse error (it can still print a
+  ## partial value from an earlier valid stanza) -- fail loud, do not derive from it.
+  if ! maintainer_raw="$(grep-dctrl --show-field=Maintainer --no-field-names '' "${make_debian_control_file_absolute_path}")"; then
+    exit_with_error 1 "failed to parse the Maintainer field from '${make_debian_control_file_absolute_path}'. Set DEBEMAIL and DEBFULLNAME explicitly."
+  fi
 
   case "${maintainer_raw}" in
     *'<'*'>'*)
@@ -131,10 +135,15 @@ deb_maintainer_identity_from_control() {
       ;;
   esac
 
-  derived_email="${maintainer_raw#*<}"
+  ## Take the LAST '<...>' pair: it is the RFC822 addr-spec, so an earlier bracketed
+  ## or parenthetical note in the display name is never mistaken for the address.
+  derived_email="${maintainer_raw##*<}"
   derived_email="${derived_email%%>*}"
-  derived_name="${maintainer_raw%%<*}"
-  ## Strip trailing whitespace left before the '<'.
+  derived_name="${maintainer_raw%<*}"
+  ## Strip surrounding whitespace from both (grep-dctrl passes it through verbatim).
+  derived_email="${derived_email#"${derived_email%%[![:space:]]*}"}"
+  derived_email="${derived_email%"${derived_email##*[![:space:]]}"}"
+  derived_name="${derived_name#"${derived_name%%[![:space:]]*}"}"
   derived_name="${derived_name%"${derived_name##*[![:space:]]}"}"
 
   [ -n "${DEBEMAIL:-}" ] || DEBEMAIL="${derived_email}"
