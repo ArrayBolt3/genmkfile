@@ -129,7 +129,15 @@ deb_maintainer_identity_from_control() {
     exit_with_error 1 "failed to parse the Maintainer field from '${make_debian_control_file_absolute_path}'. Set DEBEMAIL and DEBFULLNAME explicitly."
   fi
 
+  ## A Debian Maintainer is a single RFC822 mailbox 'Full Name <email>'. Require EXACTLY
+  ## one '<...>' pair and reject anything else -- no address, more than one address
+  ## (an ambiguous field or a parenthetical note carrying its own address), or an
+  ## unclosed bracket. Guessing which bracket is the real one is a losing game, so the
+  ## caller fails loud and the operator sets DEBEMAIL/DEBFULLNAME explicitly.
   case "${maintainer_raw}" in
+    *'<'*'<'* | *'>'*'>'*)
+      exit_with_error 1 "ambiguous Maintainer (more than one address) in '${make_debian_control_file_absolute_path}'. Set DEBEMAIL and DEBFULLNAME explicitly."
+      ;;
     *'<'*'>'*)
       ;;
     *)
@@ -137,19 +145,16 @@ deb_maintainer_identity_from_control() {
       ;;
   esac
 
-  ## Take the LAST '<...>' pair: it is the RFC822 addr-spec, so an earlier bracketed
-  ## or parenthetical note in the display name is never mistaken for the address.
-  derived_email="${maintainer_raw##*<}"
+  derived_email="${maintainer_raw#*<}"
   derived_email="${derived_email%%>*}"
-  derived_name="${maintainer_raw%<*}"
+  derived_name="${maintainer_raw%%<*}"
   ## Strip surrounding whitespace from both (grep-dctrl passes it through verbatim).
   derived_email="${derived_email#"${derived_email%%[![:space:]]*}"}"
   derived_email="${derived_email%"${derived_email##*[![:space:]]}"}"
   derived_name="${derived_name#"${derived_name%%[![:space:]]*}"}"
   derived_name="${derived_name%"${derived_name##*[![:space:]]}"}"
 
-  ## The derived address must be a real addr-spec: the LAST '<' may be unclosed, which
-  ## would leave trailing garbage (no '@') that must not reach debchange or sq.
+  ## The single bracketed value must still be a real addr-spec.
   case "${derived_email}" in
     *@*)
       ;;
