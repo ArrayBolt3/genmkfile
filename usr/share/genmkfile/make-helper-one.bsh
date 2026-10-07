@@ -159,13 +159,13 @@ deb_maintainer_identity_from_control() {
 deb_variables_check() {
   ## A non-empty identity is mandatory.
   if [ -z "${DEBEMAIL:-}" ]; then
-    if [ -n "${DEBFULLNAME}" ]; then
+    if [ -n "${DEBFULLNAME:-}" ]; then
       exit_with_error 1 "DEBEMAIL is empty but DEBFULLNAME is non-empty. Either set both or unset both."
     fi
     exit_with_error 1 "DEBEMAIL is empty and could not be derived from debian/control. Fix the file and optionally set DEBEMAIL and DEBFULLNAME."
   fi
   if [ -z "${DEBFULLNAME:-}" ]; then
-    if [ -n "${DEBEMAIL}" ]; then
+    if [ -n "${DEBEMAIL:-}" ]; then
       exit_with_error 1 "DEBFULLNAME is empty but DEBEMAIL is non-empty. Either set both or unset both."
     fi
     exit_with_error 1 "DEBFULLNAME is empty and could not be derived from debian/control. Fix the file and optionally set DEBEMAIL and DEBFULLNAME."
