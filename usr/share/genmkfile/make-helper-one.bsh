@@ -1391,21 +1391,42 @@ make_debhelper_token_check() {
   ## (e.g. a '.maintscript' rm_conffile block) a SECOND time, duplicating it
   ## (and tripping lintian maintainer-script-should-not-use-dpkg-maintscript-helper).
   ## Permit it only as a single standalone token line (or not at all).
-  local script_file token_count standalone_count
+  ##
+  ## Validates the working-tree maintainer scripts -- the source the normal
+  ## 'genmkfile deb-pkg' flow (dist -> debdist -> debdsc) packs into the .dsc
+  ## right before the build. Covers debhelper's arch/OS-qualified names
+  ## (debian/[<pkg>.]<script>[.<arch>|.<os>|.<arch>-<os>]), skipping debhelper's
+  ## own generated/backup artifacts. '-a' so a stray NUL byte cannot make grep
+  ## treat the script as binary and miss the token.
+  local script_file suffix token_count standalone_count nullglob_was_set
+  shopt -q nullglob && nullglob_was_set="yes" || nullglob_was_set="no"
   shopt -s nullglob
   for script_file in \
-    debian/preinst debian/postinst debian/prerm debian/postrm \
-    debian/*.preinst debian/*.postinst debian/*.prerm debian/*.postrm; do
+    debian/preinst     debian/postinst     debian/prerm     debian/postrm \
+    debian/preinst.*   debian/postinst.*   debian/prerm.*   debian/postrm.* \
+    debian/*.preinst   debian/*.postinst   debian/*.prerm   debian/*.postrm \
+    debian/*.preinst.* debian/*.postinst.* debian/*.prerm.* debian/*.postrm.*; do
     [ -f "${script_file}" ] || continue
-    token_count="$( { grep -oF -- '#DEBHELPER#' "${script_file}" || true; } | wc -l)"
+    suffix="${script_file##*.}"
+    case "${suffix}" in
+      debhelper|dh-exec|bak|orig|rej|tmp)
+        continue
+        ;;
+    esac
+    case "${script_file}" in
+      *'~')
+        continue
+        ;;
+    esac
+    token_count="$( { grep -aoF -- '#DEBHELPER#' "${script_file}" || true; } | wc -l)"
     [ "${token_count}" -gt 0 ] || continue
-    standalone_count="$(grep -E -c -- '^[[:space:]]*#DEBHELPER#[[:space:]]*$' "${script_file}" || true)"
+    standalone_count="$(grep -aE -c -- '^[[:space:]]*#DEBHELPER#[[:space:]]*$' "${script_file}" || true)"
     if [ "${token_count}" -ne 1 ] || [ "${standalone_count}" -ne 1 ]; then
-      shopt -u nullglob
+      [ "${nullglob_was_set}" = "yes" ] || shopt -u nullglob
       exit_with_error 1 "misplaced '#DEBHELPER#' in ${script_file}: ${token_count} occurrence(s), ${standalone_count} standalone token line(s). debhelper text-substitutes EVERY occurrence, so a token in a comment or prose duplicates the generated snippet. Keep exactly one standalone '#DEBHELPER#' line, or none."
     fi
   done
-  shopt -u nullglob
+  [ "${nullglob_was_set}" = "yes" ] || shopt -u nullglob
 }
 
 make_deb_pkg_build_shared() {
